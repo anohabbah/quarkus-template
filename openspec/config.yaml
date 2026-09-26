@@ -1,0 +1,101 @@
+schema: spec-driven
+
+context: |
+  Tech stack: Quarkus 3.39 (Gradle Kotlin DSL, Java 25), Quarkus REST + Jackson,
+  ArC (CDI), Qute, Lombok, MapStruct. Base package: dev.abbah.
+  Tests: @QuarkusTest + RestAssured in src/test; @QuarkusIntegrationTest classes in
+  src/native-test extend the JVM test (XxxIT extends XxxTest).
+
+  Architecture & package layout:
+    - Hexagonal (Ports & Adapters). Organize production code under
+      src/main/java/dev/abbah/ into two layers, domain/ and infra/:
+
+      src/main/java/dev/abbah/
+      ├── domain/
+      │   └── <domain_name>/
+      │       ├── <Domain>.java              # Domain object (record)
+      │       ├── <Domain>Usecase.java       # Business logic (@ApplicationScoped)
+      │       └── <Domain>Port.java          # Port interface (driven)
+      └── infra/
+          ├── spi/                           # Driven adapters (outbound)
+          │   ├── db/<domain_name>/
+          │   │   ├── <Domain>Entity.java        # Persistence entity
+          │   │   ├── <Domain>EntityMapper.java  # MapStruct (entity ↔ domain)
+          │   │   └── <Domain>Adapter.java       # Implements <Domain>Port
+          │   └── messaging/<domain_name>/
+          │       ├── <Domain>Producer.java      # Event producer (implements Port)
+          │       ├── <Domain>Event.java         # Outbound event (record)
+          │       └── <Domain>EventMapper.java   # MapStruct (event ↔ domain)
+          └── api/                           # Driving adapters (inbound)
+              ├── rest/<domain_name>/
+              │   ├── <Domain>Resource.java      # Jakarta REST resource
+              │   ├── <Domain>DtoMapper.java     # MapStruct (DTO ↔ domain)
+              │   └── <Domain>Dto.java           # Request/response DTOs (records)
+              └── messaging/<domain_name>/
+                  ├── <Domain>Consumer.java      # Event consumer
+                  ├── <Domain>Event.java         # Inbound event (record)
+                  └── <Domain>EventMapper.java   # MapStruct (event ↔ domain)
+
+    - Domain (domain/<domain_name>/): pure business logic, no infrastructure
+      dependencies. Only CDI annotations (jakarta.enterprise.context.*,
+      jakarta.inject.*) are allowed, on the use case. Each domain package contains
+      <Domain>.java (record), <Domain>Usecase.java (@ApplicationScoped, depends on
+      <Domain>Port), and <Domain>Port.java (driven/outbound port interface).
+    - Infra (infra/): all infrastructure adapters, split by direction. New adapter
+      technologies go in infra/spi/<technology>/<domain_name>/ (driven/outbound)
+      or infra/api/<protocol>/<domain_name>/ (driving/inbound):
+        - infra/spi/db/<domain_name>/ — database (outbound): <Domain>Entity.java,
+          <Domain>EntityMapper.java (entity ↔ domain), <Domain>Adapter.java
+          (@ApplicationScoped, implements <Domain>Port).
+        - infra/spi/messaging/<domain_name>/ — messaging producer (outbound, e.g.
+          Quarkus Messaging Emitter): <Domain>Producer.java implementing the Port,
+          <Domain>Event.java (outbound payload record), <Domain>EventMapper.java.
+        - infra/api/rest/<domain_name>/ — REST (inbound): <Domain>Resource.java
+          (@Path resource calling the use case), <Domain>DtoMapper.java (DTO ↔ domain),
+          <Domain>Dto.java (request/response DTOs).
+        - infra/api/messaging/<domain_name>/ — messaging consumer (inbound, e.g.
+          @Incoming): <Domain>Consumer.java, <Domain>Event.java (inbound payload
+          record), <Domain>EventMapper.java.
+    - <domain_name> is the feature domain name in lowercase (e.g. checklist);
+      <Domain> is its UpperCamelCase form (checklist → Checklist).
+    - File naming convention, for domain checklist:
+      Checklist, ChecklistUsecase, ChecklistPort, ChecklistEntity,
+      ChecklistEntityMapper, ChecklistAdapter, ChecklistResource, ChecklistDto,
+      ChecklistDtoMapper, ChecklistProducer, ChecklistConsumer, ChecklistEvent,
+      ChecklistEventMapper.
+    - Dependencies flow inward (infra → domain): the domain layer never imports
+      from infra, so business logic stays free of infrastructure concerns.
+    - Cross-layer mapping uses MapStruct with the CDI component model (set by the
+      build via -Amapstruct.defaultComponentModel=cdi); inject mappers, never use
+      Mappers.getMapper(...).
+    - Domain objects, DTOs, and event payloads are Java records. Use a class only
+      with a documented reason (e.g. a JPA/Hibernate entity, which must be a mutable
+      class).
+
+rules:
+  tasks:
+    - Implementation tasks follow the /tdd skill (red → green, vertical slices).
+    - The first task group lists the public interfaces (seams) under test and gets
+      the user's confirmation before any test is written. No task may test at a seam
+      not listed there.
+    - >-
+      Each slice is one seam, one behavior. Write it as a pair of tasks: "RED: write a
+      failing test for <behavior> at <seam>", then "GREEN: minimal implementation to
+      pass it". Never group several tests ahead of the code they cover.
+    - Tests verify behavior through public interfaces (e.g. REST endpoints, use case
+      methods), not internals. No mocking of internal collaborators.
+    - Keep refactoring out of slices. Put it in a final, separate review
+      group after all slices are green.
+    - Config, docs, and generated code are exempt from TDD and may be plain tasks.
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing
