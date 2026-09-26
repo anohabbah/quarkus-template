@@ -25,9 +25,10 @@ No linter or formatter is configured.
 ## Structure and conventions
 
 - **Test source sets**: `src/test` holds `@QuarkusTest` tests (RestAssured). `src/native-test` holds `@QuarkusIntegrationTest` classes that extend the JVM test to rerun the same tests against the packaged artifact — follow that `XxxIT extends XxxTest` pattern.
-- **Stack**: Quarkus REST (Jakarta REST annotations) + Jackson, ArC (CDI), Qute templates. No persistence or messaging extension is installed yet. Add one (see `addExtension`) before creating the first `infra/spi/db` or `infra/*/messaging` adapter.
+- **Stack**: Quarkus REST (Jakarta REST annotations) + Jackson, ArC (CDI), Qute templates, Hibernate Validator, and Hibernate ORM with Panache on PostgreSQL (`quarkus-jdbc-postgresql`), with the schema managed by Flyway. No messaging extension is installed yet. Add one (see `addExtension`) before creating the first `infra/*/messaging` adapter.
+- **Database**: Flyway migrations live in `src/main/resources/db/migration/` and run at startup (`quarkus.flyway.migrate-at-start=true`). Hibernate doesn't touch the schema (`quarkus.hibernate-orm.schema-management.strategy=none`). Dev mode and tests get PostgreSQL from Dev Services, which need a running Docker or Podman. Production must set `quarkus.datasource.*`.
 - **Lombok + MapStruct**: both are wired as annotation processors with `lombok-mapstruct-binding`. `-parameters` is also enabled.
-- `src/main/resources/application.properties` is empty; Quarkus defaults apply.
+- `src/main/resources/application.properties` holds only the Flyway and Hibernate schema settings above; Quarkus defaults apply otherwise.
 - Dockerfiles for JVM, legacy-jar, native, and native-micro images are in `src/main/docker/`.
 
 ## Architecture & package layout
@@ -42,9 +43,12 @@ src/main/java/dev/abbah/
 │   └── <domain_name>/
 │       ├── <Domain>.java              # Domain object (record)
 │       ├── <Domain>Usecase.java       # Business logic (@ApplicationScoped)
-│       └── <Domain>Port.java          # Port interface (driven)
+│       ├── <Domain>Port.java          # Port interface (driven)
+│       └── <Domain><Qualifier>Port.java  # Optional additional port (driven)
 └── infra/
     ├── spi/                           # Driven adapters (outbound)
+    │   ├── template/<domain_name>/
+    │   │   └── <Domain>Renderer.java      # Text rendering (implements <Domain>RendererPort)
     │   ├── db/<domain_name>/
     │   │   ├── <Domain>Entity.java        # Persistence entity
     │   │   ├── <Domain>EntityMapper.java  # MapStruct (entity ↔ domain)
@@ -64,8 +68,9 @@ src/main/java/dev/abbah/
             └── <Domain>EventMapper.java   # MapStruct (event ↔ domain)
 ```
 
-- **Domain** (`domain/<domain_name>/`): pure business logic with no infrastructure dependencies. The only framework imports allowed are CDI annotations (`jakarta.enterprise.context.*`, `jakarta.inject.*`) on the use case. Each package contains `<Domain>.java` (record), `<Domain>Usecase.java` (`@ApplicationScoped` bean that depends on `<Domain>Port`), and `<Domain>Port.java` (driven/outbound port interface).
+- **Domain** (`domain/<domain_name>/`): pure business logic with no infrastructure dependencies. The only framework imports allowed are CDI annotations (`jakarta.enterprise.context.*`, `jakarta.inject.*`) on the use case. Each package contains `<Domain>.java` (record), `<Domain>Usecase.java` (`@ApplicationScoped` bean that depends on `<Domain>Port`), and `<Domain>Port.java` (driven/outbound port interface). A domain may declare additional outbound ports named `<Domain><Qualifier>Port` (e.g. `AuthorizationRequestRendererPort`) when a separate adapter implements them.
 - **Infra** (`infra/`): all adapters, split by direction. New adapter technologies go in `infra/spi/<technology>/<domain_name>/` (driven/outbound) or `infra/api/<protocol>/<domain_name>/` (driving/inbound):
+  - `infra/spi/template/<domain_name>/`: `<Domain>Renderer.java` (`@ApplicationScoped`, implements `<Domain>RendererPort`) renders text with Qute. Its templates live in `src/main/resources/templates/<Domain>Renderer/`.
   - `infra/spi/db/<domain_name>/`: `<Domain>Entity.java`, `<Domain>EntityMapper.java` (entity ↔ domain), and `<Domain>Adapter.java` (`@ApplicationScoped`, implements `<Domain>Port`).
   - `infra/spi/messaging/<domain_name>/`: `<Domain>Producer.java` implements the port (e.g. a Quarkus Messaging `Emitter`), plus `<Domain>Event.java` (outbound payload record) and `<Domain>EventMapper.java`.
   - `infra/api/rest/<domain_name>/`: `<Domain>Resource.java` (`@Path` resource that calls the use case), `<Domain>DtoMapper.java`, and `<Domain>Dto.java`.
@@ -74,7 +79,7 @@ src/main/java/dev/abbah/
 - **File naming.** File names are exactly `<Domain>` + the suffixes shown in the tree above (e.g. `ChecklistEntityMapper`).
 - **Dependency direction.** Dependencies flow inward (infra → domain): the domain layer never imports from `infra`, so business logic stays free of infrastructure concerns.
 - **Mapping.** Cross-layer mapping uses MapStruct. The build sets `-Amapstruct.defaultComponentModel=cdi`, so mappers are CDI beans and must be injected (don't call `Mappers.getMapper(...)`).
-- **Records.** Domain objects, DTOs, and event payloads are Java records. Use a class only with a documented reason, such as required mutability or a framework constraint. A JPA/Hibernate `<Domain>Entity` is the standard case: it must be a mutable class, because Jakarta Persistence doesn't support records as entities.
+- **Records.** Domain objects, DTOs, and event payloads are Java records. Use a class only with a documented reason, such as required mutability or a framework constraint. A JPA/Hibernate `<Domain>Entity` is the standard case: it must be a mutable class, because Jakarta Persistence doesn't support records as entities. A sealed interface grouping nested records is also an accepted form for `<Domain>.java` and `<Domain>Dto.java`, when a type has variants that share few fields.
 
 ## OpenSpec workflow
 

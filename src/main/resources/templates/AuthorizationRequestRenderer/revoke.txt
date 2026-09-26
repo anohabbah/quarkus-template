@@ -1,0 +1,8 @@
+{#fragment id=subject}
+Authorization revocation request
+{/fragment}
+{#fragment id=description}
+Requested by: {request.requestedBy}
+Employee ID: {request.employeeId}
+{#include AuthorizationRequestRenderer/authorizations /}
+{/fragment}

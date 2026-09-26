@@ -15,9 +15,12 @@ context: |
       │   └── <domain_name>/
       │       ├── <Domain>.java              # Domain object (record)
       │       ├── <Domain>Usecase.java       # Business logic (@ApplicationScoped)
-      │       └── <Domain>Port.java          # Port interface (driven)
+      │       ├── <Domain>Port.java          # Port interface (driven)
+      │       └── <Domain><Qualifier>Port.java  # Optional additional port (driven)
       └── infra/
           ├── spi/                           # Driven adapters (outbound)
+          │   ├── template/<domain_name>/
+          │   │   └── <Domain>Renderer.java      # Text rendering (implements <Domain>RendererPort)
           │   ├── db/<domain_name>/
           │   │   ├── <Domain>Entity.java        # Persistence entity
           │   │   ├── <Domain>EntityMapper.java  # MapStruct (entity ↔ domain)
@@ -41,9 +44,15 @@ context: |
       jakarta.inject.*) are allowed, on the use case. Each domain package contains
       <Domain>.java (record), <Domain>Usecase.java (@ApplicationScoped, depends on
       <Domain>Port), and <Domain>Port.java (driven/outbound port interface).
+      A domain may declare additional outbound ports named <Domain><Qualifier>Port
+      (e.g. AuthorizationRequestRendererPort) when a separate adapter implements them.
     - Infra (infra/): all infrastructure adapters, split by direction. New adapter
       technologies go in infra/spi/<technology>/<domain_name>/ (driven/outbound)
       or infra/api/<protocol>/<domain_name>/ (driving/inbound):
+        - infra/spi/template/<domain_name>/ — text rendering (outbound):
+          <Domain>Renderer.java (@ApplicationScoped, implements <Domain>RendererPort)
+          renders text with Qute. Its templates live in
+          src/main/resources/templates/<Domain>Renderer/.
         - infra/spi/db/<domain_name>/ — database (outbound): <Domain>Entity.java,
           <Domain>EntityMapper.java (entity ↔ domain), <Domain>Adapter.java
           (@ApplicationScoped, implements <Domain>Port).
@@ -62,7 +71,7 @@ context: |
       Checklist, ChecklistUsecase, ChecklistPort, ChecklistEntity,
       ChecklistEntityMapper, ChecklistAdapter, ChecklistResource, ChecklistDto,
       ChecklistDtoMapper, ChecklistProducer, ChecklistConsumer, ChecklistEvent,
-      ChecklistEventMapper.
+      ChecklistEventMapper, ChecklistRenderer, ChecklistRendererPort.
     - Dependencies flow inward (infra → domain): the domain layer never imports
       from infra, so business logic stays free of infrastructure concerns.
     - Cross-layer mapping uses MapStruct with the CDI component model (set by the
@@ -70,7 +79,9 @@ context: |
       Mappers.getMapper(...).
     - Domain objects, DTOs, and event payloads are Java records. Use a class only
       with a documented reason (e.g. a JPA/Hibernate entity, which must be a mutable
-      class).
+      class). A sealed interface grouping nested records is also an accepted form
+      for <Domain>.java and <Domain>Dto.java, when a type has variants that share
+      few fields.
 
 rules:
   tasks:

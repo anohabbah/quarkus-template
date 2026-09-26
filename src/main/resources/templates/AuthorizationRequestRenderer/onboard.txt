@@ -1,0 +1,10 @@
+{#fragment id=subject}
+Employee onboarding request
+{/fragment}
+{#fragment id=description}
+Requested by: {request.requestedBy}
+Employee: {request.firstName} {request.lastName} <{request.email}>
+Department: {request.department}
+Start date: {request.startDate}
+{#include AuthorizationRequestRenderer/authorizations /}
+{/fragment}
