@@ -1,10 +1,6 @@
-# authorization-requests Specification
+# Spec Delta
 
-## Purpose
-
-Lets administrators submit requests to grant authorizations to an employee, revoke authorizations from an employee, or onboard a new employee with authorizations. Each request gets a generated email-like subject and description, and is filed as a Case in Salesforce, where the processing team works on it.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Submit a grant request
 The system SHALL accept an authorization request of type `GRANT` at `POST /authorization-requests`. The request SHALL carry `requestedBy` (the requester's email address), `employeeId`, and a non-empty list of `authorizations`. The system SHALL respond `201 Created` with a JSON body containing the `caseNumber` of the filed Salesforce Case, the `type`, the generated `subject`, and the generated `description`.
@@ -95,6 +91,8 @@ The system SHALL respond `400 Bad Request` and SHALL NOT send anything to Salesf
 - **THEN** the response status is `400`
 - **AND** nothing is sent to Salesforce
 
+## ADDED Requirements
+
 ### Requirement: Submitted requests are filed as Salesforce Cases
 For every valid request, the system SHALL send exactly one authenticated call to the Salesforce authorization-requests endpoint. The call SHALL carry the request `type`, the requester's email as `requesterEmail`, and the generated `subject` and `description`. The system SHALL NOT retry the call automatically.
 
@@ -126,3 +124,9 @@ The system SHALL respond `502 Bad Gateway` when the call to Salesforce fails for
 - **WHEN** an administrator posts a valid request
 - **AND** Salesforce answers `400` with `{"errorCode": "INVALID_REQUEST"}`
 - **THEN** the response status is `502`
+
+## REMOVED Requirements
+
+### Requirement: Submitted requests are stored
+**Reason**: The processing team works in Salesforce, so requests are filed there as Cases and are no longer stored locally.
+**Migration**: Look up requests in Salesforce by the `caseNumber` returned at submission. Previously stored rows are dropped with their tables, and are not migrated to Salesforce.

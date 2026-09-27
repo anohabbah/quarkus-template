@@ -1,9 +1,7 @@
 package dev.abbah.domain.authorizationrequest;
 
-import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.UUID;
 
 /**
  * A sealed interface rather than a record: the request variants share few fields,
@@ -44,6 +42,6 @@ public sealed interface AuthorizationRequest permits AuthorizationRequest.Grant,
     record Message(String subject, String description) {
     }
 
-    record Submitted(UUID id, Instant requestedAt, AuthorizationRequest request, Message message) {
+    record Submitted(AuthorizationRequest request, Message message, String reference) {
     }
 }

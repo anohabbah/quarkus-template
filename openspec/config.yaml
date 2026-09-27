@@ -16,7 +16,8 @@ context: |
       │       ├── <Domain>.java              # Domain object (record)
       │       ├── <Domain>Usecase.java       # Business logic (@ApplicationScoped)
       │       ├── <Domain>Port.java          # Port interface (driven)
-      │       └── <Domain><Qualifier>Port.java  # Optional additional port (driven)
+      │       ├── <Domain><Qualifier>Port.java  # Optional additional port (driven)
+      │       └── <Something>Exception.java  # Optional outcome reported by an adapter
       └── infra/
           ├── spi/                           # Driven adapters (outbound)
           │   ├── template/<domain_name>/
@@ -24,6 +25,11 @@ context: |
           │   ├── db/<domain_name>/
           │   │   ├── <Domain>Entity.java        # Persistence entity
           │   │   ├── <Domain>EntityMapper.java  # MapStruct (entity ↔ domain)
+          │   │   └── <Domain>Adapter.java       # Implements <Domain>Port
+          │   ├── rest/<system>/<domain_name>/
+          │   │   ├── <Domain>Client.java        # REST client interface
+          │   │   ├── <Domain>Payload.java       # Wire request/response records
+          │   │   ├── <Domain>PayloadMapper.java # MapStruct (payload ↔ domain)
           │   │   └── <Domain>Adapter.java       # Implements <Domain>Port
           │   └── messaging/<domain_name>/
           │       ├── <Domain>Producer.java      # Event producer (implements Port)
@@ -46,6 +52,9 @@ context: |
       <Domain>Port), and <Domain>Port.java (driven/outbound port interface).
       A domain may declare additional outbound ports named <Domain><Qualifier>Port
       (e.g. AuthorizationRequestRendererPort) when a separate adapter implements them.
+      A domain may also declare unchecked exception types named <Something>Exception
+      (e.g. UnknownRequesterException) for outcomes that outbound adapters report
+      and inbound adapters map to responses.
     - Infra (infra/): all infrastructure adapters, split by direction. New adapter
       technologies go in infra/spi/<technology>/<domain_name>/ (driven/outbound)
       or infra/api/<protocol>/<domain_name>/ (driving/inbound):
@@ -56,6 +65,13 @@ context: |
         - infra/spi/db/<domain_name>/ — database (outbound): <Domain>Entity.java,
           <Domain>EntityMapper.java (entity ↔ domain), <Domain>Adapter.java
           (@ApplicationScoped, implements <Domain>Port).
+        - infra/spi/rest/<system>/<domain_name>/ — external REST API (outbound).
+          <system> names that system in lowercase (e.g. salesforce):
+          <Domain>Client.java (Quarkus REST client interface), <Domain>Payload.java
+          (wire request/response records), <Domain>PayloadMapper.java
+          (payload ↔ domain), <Domain>Adapter.java (@ApplicationScoped, implements
+          <Domain>Port, calls the client and converts its failures into domain
+          exceptions).
         - infra/spi/messaging/<domain_name>/ — messaging producer (outbound, e.g.
           Quarkus Messaging Emitter): <Domain>Producer.java implementing the Port,
           <Domain>Event.java (outbound payload record), <Domain>EventMapper.java.
@@ -71,17 +87,19 @@ context: |
       Checklist, ChecklistUsecase, ChecklistPort, ChecklistEntity,
       ChecklistEntityMapper, ChecklistAdapter, ChecklistResource, ChecklistDto,
       ChecklistDtoMapper, ChecklistProducer, ChecklistConsumer, ChecklistEvent,
-      ChecklistEventMapper, ChecklistRenderer, ChecklistRendererPort.
+      ChecklistEventMapper, ChecklistRenderer, ChecklistRendererPort, ChecklistClient,
+      ChecklistPayload, ChecklistPayloadMapper.
     - Dependencies flow inward (infra → domain): the domain layer never imports
       from infra, so business logic stays free of infrastructure concerns.
     - Cross-layer mapping uses MapStruct with the CDI component model (set by the
       build via -Amapstruct.defaultComponentModel=cdi); inject mappers, never use
       Mappers.getMapper(...).
-    - Domain objects, DTOs, and event payloads are Java records. Use a class only
-      with a documented reason (e.g. a JPA/Hibernate entity, which must be a mutable
-      class). A sealed interface grouping nested records is also an accepted form
+    - Domain objects, DTOs, event payloads, and REST payloads are Java records. Use
+      a class only with a documented reason (e.g. a JPA/Hibernate entity, which must
+      be a mutable class). A sealed interface grouping nested records is also an accepted form
       for <Domain>.java and <Domain>Dto.java, when a type has variants that share
-      few fields.
+      few fields. An interface grouping nested records is the form for
+      <Domain>Payload.java.
 
 rules:
   tasks:

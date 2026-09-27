@@ -17,6 +17,7 @@ public interface AuthorizationRequestDtoMapper {
     @BeanMapping(subclassExhaustiveStrategy = SubclassExhaustiveStrategy.RUNTIME_EXCEPTION)
     AuthorizationRequest toDomain(AuthorizationRequestDto dto);
 
+    @Mapping(target = "caseNumber", source = "reference")
     @Mapping(target = "type", expression = "java(submitted.request().type().name())")
     @Mapping(target = "subject", source = "message.subject")
     @Mapping(target = "description", source = "message.description")
