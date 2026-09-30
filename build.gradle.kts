@@ -30,6 +30,7 @@ dependencies {
     implementation("io.quarkus:quarkus-rest-client-jackson")
     implementation("io.quarkus:quarkus-oidc-client")
     implementation("io.quarkus:quarkus-rest-client-oidc-filter")
+    implementation("io.quarkus:quarkus-smallrye-fault-tolerance")
     implementation("org.mapstruct:mapstruct:${mapstructVersion}")
     annotationProcessor("org.projectlombok:lombok-mapstruct-binding:${lombokMapstructBindingVersion}")
     annotationProcessor("org.mapstruct:mapstruct-processor:${mapstructVersion}")

@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
@@ -21,6 +22,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.jsonResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
+import static com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -152,10 +154,8 @@ class AuthorizationRequestResourceTest {
     }
 
     private List<String> requestHashesReceived() {
-        return salesforce.getAllServeEvents().stream()
-                .map(ServeEvent::getRequest)
-                .filter(request -> request.getUrl().equals(APEX_PATH))
-                .map(request -> JsonPath.from(request.getBodyAsString()).getString("requestHash"))
+        return apexBodiesReceived().stream()
+                .map(body -> (String) body.get("requestHash"))
                 .toList();
     }
 
@@ -286,6 +286,8 @@ class AuthorizationRequestResourceTest {
           .when().post("/authorization-requests")
           .then()
              .statusCode(422);
+
+        salesforce.verify(1, postRequestedFor(urlEqualTo(APEX_PATH)));
     }
 
     @Test
@@ -304,6 +306,116 @@ class AuthorizationRequestResourceTest {
           .when().post("/authorization-requests")
           .then()
              .statusCode(409);
+
+        salesforce.verify(1, postRequestedFor(urlEqualTo(APEX_PATH)));
+    }
+
+    @Test
+    void salesforceRecoveringAfterServerErrorFilesTheCase() {
+        salesforce.stubFor(post(APEX_PATH).inScenario("recovery")
+                .whenScenarioStateIs(STARTED)
+                .willReturn(aResponse().withStatus(503))
+                .willSetStateTo("recovered"));
+        salesforce.stubFor(post(APEX_PATH).inScenario("recovery")
+                .whenScenarioStateIs("recovered")
+                .willReturn(jsonResponse("""
+                        {"caseId": "500x", "caseNumber": "00012345"}
+                        """, 201)));
+
+        given()
+          .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
+          .body("""
+                {"type": "GRANT", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234",
+                 "authorizations": ["READ_PAYROLL"]}
+                """)
+          .when().post("/authorization-requests")
+          .then()
+             .statusCode(201)
+             .body("caseNumber", is("00012345"));
+
+        salesforce.verify(2, postRequestedFor(urlEqualTo(APEX_PATH)));
+    }
+
+    @Test
+    void retryAfterTimeoutReturnsTheCaseTheTimedOutCallFiled() {
+        salesforce.stubFor(post(APEX_PATH).inScenario("late answer")
+                .whenScenarioStateIs(STARTED)
+                .willReturn(jsonResponse("""
+                        {"caseId": "500x", "caseNumber": "00012345"}
+                        """, 201).withFixedDelay(2 * SalesforceStub.READ_TIMEOUT_MILLIS))
+                .willSetStateTo("filed"));
+        salesforce.stubFor(post(APEX_PATH).inScenario("late answer")
+                .whenScenarioStateIs("filed")
+                .willReturn(jsonResponse("""
+                        {"caseId": "500x", "caseNumber": "00012345"}
+                        """, 200)));
+
+        given()
+          .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
+          .body("""
+                {"type": "GRANT", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234",
+                 "authorizations": ["READ_PAYROLL"]}
+                """)
+          .when().post("/authorization-requests")
+          .then()
+             .statusCode(201)
+             .body("caseNumber", is("00012345"));
+
+        salesforce.verify(2, postRequestedFor(urlEqualTo(APEX_PATH)));
+    }
+
+    @Test
+    void salesforceNeverAnsweringInTimeIsReportedAsBadGateway() {
+        salesforce.stubFor(post(APEX_PATH).willReturn(jsonResponse("""
+                {"caseId": "500x", "caseNumber": "00012345"}
+                """, 201).withFixedDelay(2 * SalesforceStub.READ_TIMEOUT_MILLIS)));
+
+        given()
+          .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
+          .body("""
+                {"type": "GRANT", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234",
+                 "authorizations": ["READ_PAYROLL"]}
+                """)
+          .when().post("/authorization-requests")
+          .then()
+             .statusCode(502);
+
+        salesforce.verify(3, postRequestedFor(urlEqualTo(APEX_PATH)));
+    }
+
+    @Test
+    void retriedCallsCarryTheSameBody() {
+        salesforce.stubFor(post(APEX_PATH).willReturn(aResponse().withStatus(503)));
+
+        given()
+          .contentType(ContentType.JSON)
+          .header("Idempotency-Key", "7f3c2a9e-1b4d-4e8a-9c6f-2d5b8e1a3f70")
+          .body("""
+                {"type": "GRANT", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234",
+                 "authorizations": ["READ_PAYROLL"]}
+                """)
+          .when().post("/authorization-requests")
+          .then()
+             .statusCode(502);
+
+        List<Map<String, Object>> bodies = apexBodiesReceived();
+        assertThat(bodies, hasSize(3));
+        assertThat(bodies.get(0).get("requestId"), is("7f3c2a9e-1b4d-4e8a-9c6f-2d5b8e1a3f70"));
+        assertThat((String) bodies.get(0).get("requestHash"), not(blankOrNullString()));
+        for (Map<String, Object> body : bodies) {
+            assertThat(body, is(bodies.get(0)));
+        }
+    }
+
+    private List<Map<String, Object>> apexBodiesReceived() {
+        return salesforce.getAllServeEvents().stream()
+                .map(ServeEvent::getRequest)
+                .filter(request -> request.getUrl().equals(APEX_PATH))
+                .map(request -> JsonPath.from(request.getBodyAsString()).<String, Object>getMap(""))
+                .toList();
     }
 
     @Test
@@ -320,6 +432,8 @@ class AuthorizationRequestResourceTest {
           .when().post("/authorization-requests")
           .then()
              .statusCode(502);
+
+        salesforce.verify(3, postRequestedFor(urlEqualTo(APEX_PATH)));
     }
 
     @Test
@@ -338,6 +452,8 @@ class AuthorizationRequestResourceTest {
           .when().post("/authorization-requests")
           .then()
              .statusCode(502);
+
+        salesforce.verify(1, postRequestedFor(urlEqualTo(APEX_PATH)));
     }
 
     @Test
@@ -356,6 +472,8 @@ class AuthorizationRequestResourceTest {
           .when().post("/authorization-requests")
           .then()
              .statusCode(502);
+
+        salesforce.verify(1, postRequestedFor(urlEqualTo(APEX_PATH)));
     }
 
     @Test
@@ -374,6 +492,8 @@ class AuthorizationRequestResourceTest {
           .when().post("/authorization-requests")
           .then()
              .statusCode(502);
+
+        salesforce.verify(1, postRequestedFor(urlEqualTo(APEX_PATH)));
     }
 
     @Test
@@ -408,6 +528,8 @@ class AuthorizationRequestResourceTest {
           .when().post("/authorization-requests")
           .then()
              .statusCode(502);
+
+        salesforce.verify(1, postRequestedFor(urlEqualTo(APEX_PATH)));
     }
 
     @Test

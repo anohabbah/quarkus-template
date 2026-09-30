@@ -1,6 +1,7 @@
 package dev.abbah.infra.api.rest.authorizationrequest;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.http.Fault;
 import dev.abbah.infra.spi.rest.salesforce.InjectSalesforceStub;
 import dev.abbah.infra.spi.rest.salesforce.SalesforceStub;
 import io.quarkus.test.common.WithTestResource;
@@ -13,17 +14,19 @@ import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.jsonResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
-import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
-import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
+import static com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED;
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.CoreMatchers.is;
 
 @QuarkusTest
 // Its own profile restarts the application, so no token is cached from other tests.
-@TestProfile(AuthorizationRequestResourceTokenFailureTest.FreshStart.class)
+@TestProfile(AuthorizationRequestResourceTokenUnreachableTest.FreshStart.class)
 @WithTestResource(SalesforceStub.class)
-class AuthorizationRequestResourceTokenFailureTest {
+class AuthorizationRequestResourceTokenUnreachableTest {
 
     private static final String APEX_PATH = "/services/apexrest/authorization-requests/v1";
 
@@ -34,15 +37,24 @@ class AuthorizationRequestResourceTokenFailureTest {
     WireMockServer salesforce;
 
     @BeforeEach
-    void salesforceRejectsTheClient() {
+    void tokenEndpointDropsTheFirstConnection() {
         SalesforceStub.reset(salesforce);
-        salesforce.stubFor(post("/services/oauth2/token").willReturn(jsonResponse("""
-                {"error": "invalid_client"}
-                """, 400)));
+        salesforce.stubFor(post("/services/oauth2/token").inScenario("dropped connection")
+                .whenScenarioStateIs(STARTED)
+                .willReturn(aResponse().withFault(Fault.CONNECTION_RESET_BY_PEER))
+                .willSetStateTo("reachable"));
+        salesforce.stubFor(post("/services/oauth2/token").inScenario("dropped connection")
+                .whenScenarioStateIs("reachable")
+                .willReturn(okJson("""
+                        {"access_token": "%s", "token_type": "Bearer"}
+                        """.formatted(SalesforceStub.ACCESS_TOKEN))));
+        salesforce.stubFor(post(APEX_PATH).willReturn(jsonResponse("""
+                {"caseId": "500x", "caseNumber": "00012345"}
+                """, 201)));
     }
 
     @Test
-    void tokenFailureIsReportedAsBadGateway() {
+    void tokenEndpointDroppingTheConnectionIsRetried() {
         given()
           .contentType(ContentType.JSON)
           .header("Idempotency-Key", UUID.randomUUID())
@@ -52,9 +64,7 @@ class AuthorizationRequestResourceTokenFailureTest {
                 """)
           .when().post("/authorization-requests")
           .then()
-             .statusCode(502);
-
-        salesforce.verify(1, postRequestedFor(urlEqualTo("/services/oauth2/token")));
-        salesforce.verify(0, postRequestedFor(urlEqualTo(APEX_PATH)));
+             .statusCode(201)
+             .body("caseNumber", is("00012345"));
     }
 }

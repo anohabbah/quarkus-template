@@ -11,6 +11,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.faulttolerance.exceptions.TimeoutException;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 
 import java.util.UUID;
@@ -43,7 +44,7 @@ public class AuthorizationRequestAdapter implements AuthorizationRequestPort {
                 throw new RequestIdReusedException(requestId, e);
             }
             throw new SubmissionFailedException(e);
-        } catch (ProcessingException | OidcClientException e) {
+        } catch (ProcessingException | OidcClientException | TimeoutException e) {
             throw new SubmissionFailedException(e);
         }
         if (response == null || response.caseNumber() == null || response.caseNumber().isBlank()) {

@@ -16,6 +16,11 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMoc
 public class SalesforceStub implements QuarkusTestResourceLifecycleManager {
 
     public static final String ACCESS_TOKEN = "stub-access-token";
+    public static final int READ_TIMEOUT_MILLIS = 500;
+    public static final int ATTEMPT_TIMEOUT_MILLIS = 1000;
+
+    // Global rather than per method: for a REST client, the per-method key names the generated bean class.
+    private static final String FAULT_TOLERANCE = "quarkus.fault-tolerance.global";
 
     private WireMockServer server;
 
@@ -28,7 +33,12 @@ public class SalesforceStub implements QuarkusTestResourceLifecycleManager {
                 "quarkus.rest-client.salesforce.url", server.baseUrl(),
                 "quarkus.oidc-client.auth-server-url", server.baseUrl(),
                 "quarkus.oidc-client.client-id", "stub-client-id",
-                "quarkus.oidc-client.credentials.secret", "stub-client-secret");
+                "quarkus.oidc-client.credentials.secret", "stub-client-secret",
+                // Shortened so that tests don't wait between attempts, or on a stubbed delay.
+                FAULT_TOLERANCE + ".retry.delay", "0",
+                FAULT_TOLERANCE + ".retry.jitter", "0",
+                "quarkus.rest-client.salesforce.read-timeout", String.valueOf(READ_TIMEOUT_MILLIS),
+                FAULT_TOLERANCE + ".timeout.value", String.valueOf(ATTEMPT_TIMEOUT_MILLIS));
     }
 
     /**
