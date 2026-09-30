@@ -3,6 +3,7 @@ package dev.abbah.infra.spi.rest.salesforce.authorizationrequest;
 import dev.abbah.domain.authorizationrequest.AuthorizationRequest;
 import dev.abbah.domain.authorizationrequest.AuthorizationRequest.Message;
 import dev.abbah.domain.authorizationrequest.AuthorizationRequestPort;
+import dev.abbah.domain.authorizationrequest.RequestIdReusedException;
 import dev.abbah.domain.authorizationrequest.SubmissionFailedException;
 import dev.abbah.domain.authorizationrequest.UnknownRequesterException;
 import io.quarkus.oidc.client.OidcClientException;
@@ -12,10 +13,13 @@ import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 
+import java.util.UUID;
+
 @ApplicationScoped
 public class AuthorizationRequestAdapter implements AuthorizationRequestPort {
 
     private static final String REQUESTER_NOT_FOUND = "REQUESTER_NOT_FOUND";
+    private static final String REQUEST_ID_REUSED = "REQUEST_ID_REUSED";
 
     private final AuthorizationRequestClient client;
     private final AuthorizationRequestPayloadMapper mapper;
@@ -27,13 +31,16 @@ public class AuthorizationRequestAdapter implements AuthorizationRequestPort {
     }
 
     @Override
-    public String submit(AuthorizationRequest request, Message message) {
+    public String submit(UUID requestId, AuthorizationRequest request, Message message) {
         AuthorizationRequestPayload.Response response;
         try {
-            response = client.submit(mapper.toRequest(request, message));
+            response = client.submit(mapper.toRequest(requestId, request, message));
         } catch (WebApplicationException e) {
-            if (isUnknownRequester(e.getResponse())) {
+            if (hasError(e.getResponse(), 422, REQUESTER_NOT_FOUND)) {
                 throw new UnknownRequesterException(request.requestedBy(), e);
+            }
+            if (hasError(e.getResponse(), 409, REQUEST_ID_REUSED)) {
+                throw new RequestIdReusedException(requestId, e);
             }
             throw new SubmissionFailedException(e);
         } catch (ProcessingException | OidcClientException e) {
@@ -45,12 +52,12 @@ public class AuthorizationRequestAdapter implements AuthorizationRequestPort {
         return response.caseNumber();
     }
 
-    private static boolean isUnknownRequester(Response response) {
-        if (response.getStatus() != 422) {
+    private static boolean hasError(Response response, int status, String errorCode) {
+        if (response.getStatus() != status) {
             return false;
         }
         try {
-            return REQUESTER_NOT_FOUND.equals(response.readEntity(AuthorizationRequestPayload.Error.class).errorCode());
+            return errorCode.equals(response.readEntity(AuthorizationRequestPayload.Error.class).errorCode());
         } catch (ProcessingException e) {
             return false;
         }

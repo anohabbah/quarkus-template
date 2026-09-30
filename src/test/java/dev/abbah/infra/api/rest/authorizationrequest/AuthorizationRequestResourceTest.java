@@ -1,13 +1,18 @@
 package dev.abbah.infra.api.rest.authorizationrequest;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import dev.abbah.infra.spi.rest.salesforce.InjectSalesforceStub;
 import dev.abbah.infra.spi.rest.salesforce.SalesforceStub;
 import io.quarkus.test.common.WithTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
+import io.restassured.path.json.JsonPath;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.UUID;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
@@ -18,6 +23,10 @@ import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.blankOrNullString;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.not;
 
 @QuarkusTest
 @WithTestResource(SalesforceStub.class)
@@ -45,6 +54,7 @@ class AuthorizationRequestResourceTest {
 
         given()
           .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
           .body("""
                 {"type": "GRANT", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234",
                  "authorizations": ["READ_PAYROLL", "EDIT_TIMESHEETS"]}
@@ -69,6 +79,7 @@ class AuthorizationRequestResourceTest {
 
         given()
           .contentType(ContentType.JSON)
+          .header("Idempotency-Key", "7f3c2a9e-1b4d-4e8a-9c6f-2d5b8e1a3f70")
           .body("""
                 {"type": "GRANT", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234",
                  "authorizations": ["READ_PAYROLL", "EDIT_TIMESHEETS"]}
@@ -86,10 +97,66 @@ class AuthorizationRequestResourceTest {
         salesforce.verify(1, postRequestedFor(urlEqualTo(APEX_PATH))
                 .withHeader("Authorization", equalTo("Bearer " + SalesforceStub.ACCESS_TOKEN))
                 .withRequestBody(equalToJson("""
-                        {"type": "GRANT", "requesterEmail": "alice.admin@corp.com",
+                        {"requestId": "7f3c2a9e-1b4d-4e8a-9c6f-2d5b8e1a3f70",
+                         "requestHash": "${json-unit.any-string}",
+                         "type": "GRANT", "requesterEmail": "alice.admin@corp.com",
                          "subject": "Authorization grant request",
                          "description": "Requested by: alice.admin@corp.com\\nEmployee ID: E1234\\nAuthorizations:\\n- READ_PAYROLL\\n- EDIT_TIMESHEETS"}
                         """)));
+    }
+
+    @Test
+    void identicalRequestsCarryTheSameHash() {
+        salesforceFilesCase();
+        String grant = """
+                {"type": "GRANT", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234",
+                 "authorizations": ["READ_PAYROLL"]}
+                """;
+
+        for (int i = 0; i < 2; i++) {
+            given()
+              .contentType(ContentType.JSON)
+              .header("Idempotency-Key", UUID.randomUUID())
+              .body(grant)
+              .when().post("/authorization-requests")
+              .then()
+                 .statusCode(201);
+        }
+
+        List<String> hashes = requestHashesReceived();
+        assertThat(hashes, hasSize(2));
+        assertThat(hashes.get(0), not(blankOrNullString()));
+        assertThat(hashes.get(1), is(hashes.get(0)));
+    }
+
+    @Test
+    void differentRequestsCarryDifferentHashes() {
+        salesforceFilesCase();
+
+        for (String employeeId : List.of("E1234", "E5678")) {
+            given()
+              .contentType(ContentType.JSON)
+              .header("Idempotency-Key", UUID.randomUUID())
+              .body("""
+                    {"type": "GRANT", "requestedBy": "alice.admin@corp.com", "employeeId": "%s",
+                     "authorizations": ["READ_PAYROLL"]}
+                    """.formatted(employeeId))
+              .when().post("/authorization-requests")
+              .then()
+                 .statusCode(201);
+        }
+
+        List<String> hashes = requestHashesReceived();
+        assertThat(hashes, hasSize(2));
+        assertThat(hashes.get(1), not(is(hashes.get(0))));
+    }
+
+    private List<String> requestHashesReceived() {
+        return salesforce.getAllServeEvents().stream()
+                .map(ServeEvent::getRequest)
+                .filter(request -> request.getUrl().equals(APEX_PATH))
+                .map(request -> JsonPath.from(request.getBodyAsString()).getString("requestHash"))
+                .toList();
     }
 
     @Test
@@ -98,6 +165,7 @@ class AuthorizationRequestResourceTest {
 
         given()
           .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
           .body("""
                 {"type": "REVOKE", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234",
                  "authorizations": ["READ_PAYROLL"]}
@@ -121,6 +189,7 @@ class AuthorizationRequestResourceTest {
 
         given()
           .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
           .body("""
                 {"type": "ONBOARD", "requestedBy": "alice.admin@corp.com", "firstName": "Jane", "lastName": "Doe",
                  "email": "jane.doe@corp.com", "department": "Finance", "startDate": "2026-10-01",
@@ -147,6 +216,7 @@ class AuthorizationRequestResourceTest {
 
         given()
           .contentType(ContentType.JSON)
+          .header("Idempotency-Key", "0b8e4d2c-6a1f-4c3e-8d7b-5e9f1a2c3b4d")
           .body("""
                 {"type": "ONBOARD", "requestedBy": "alice.admin@corp.com", "firstName": "Jane", "lastName": "Doe",
                  "email": "jane.doe@corp.com", "department": "Finance", "startDate": "2026-10-01",
@@ -166,10 +236,38 @@ class AuthorizationRequestResourceTest {
 
         salesforce.verify(1, postRequestedFor(urlEqualTo(APEX_PATH))
                 .withRequestBody(equalToJson("""
-                        {"type": "ONBOARD", "requesterEmail": "alice.admin@corp.com",
+                        {"requestId": "0b8e4d2c-6a1f-4c3e-8d7b-5e9f1a2c3b4d",
+                         "requestHash": "${json-unit.any-string}",
+                         "type": "ONBOARD", "requesterEmail": "alice.admin@corp.com",
                          "subject": "Employee onboarding request",
                          "description": "Requested by: alice.admin@corp.com\\nEmployee: Jane Doe <jane.doe@corp.com>\\nDepartment: Finance\\nStart date: 2026-10-01\\nAuthorizations:\\n- READ_PAYROLL"}
                         """)));
+    }
+
+    @Test
+    void retriedRequestReturnsTheOriginalCase() {
+        salesforce.stubFor(post(APEX_PATH).willReturn(jsonResponse("""
+                {"caseId": "500x", "caseNumber": "00012345"}
+                """, 200)));
+
+        given()
+          .contentType(ContentType.JSON)
+          .header("Idempotency-Key", "7f3c2a9e-1b4d-4e8a-9c6f-2d5b8e1a3f70")
+          .body("""
+                {"type": "GRANT", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234",
+                 "authorizations": ["READ_PAYROLL"]}
+                """)
+          .when().post("/authorization-requests")
+          .then()
+             .statusCode(201)
+             .body("caseNumber", is("00012345"))
+             .body("type", is("GRANT"))
+             .body("subject", is("Authorization grant request"))
+             .body("description", is("""
+                     Requested by: alice.admin@corp.com
+                     Employee ID: E1234
+                     Authorizations:
+                     - READ_PAYROLL"""));
     }
 
     @Test
@@ -180,6 +278,7 @@ class AuthorizationRequestResourceTest {
 
         given()
           .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
           .body("""
                 {"type": "GRANT", "requestedBy": "nobody@corp.com", "employeeId": "E1234",
                  "authorizations": ["READ_PAYROLL"]}
@@ -190,11 +289,30 @@ class AuthorizationRequestResourceTest {
     }
 
     @Test
+    void reusedIdempotencyKeyIsRejected() {
+        salesforce.stubFor(post(APEX_PATH).willReturn(jsonResponse("""
+                {"errorCode": "REQUEST_ID_REUSED"}
+                """, 409)));
+
+        given()
+          .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
+          .body("""
+                {"type": "GRANT", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234",
+                 "authorizations": ["READ_PAYROLL"]}
+                """)
+          .when().post("/authorization-requests")
+          .then()
+             .statusCode(409);
+    }
+
+    @Test
     void salesforceServerErrorIsReportedAsBadGateway() {
         salesforce.stubFor(post(APEX_PATH).willReturn(aResponse().withStatus(500)));
 
         given()
           .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
           .body("""
                 {"type": "GRANT", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234",
                  "authorizations": ["READ_PAYROLL"]}
@@ -212,6 +330,7 @@ class AuthorizationRequestResourceTest {
 
         given()
           .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
           .body("""
                 {"type": "GRANT", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234",
                  "authorizations": ["READ_PAYROLL"]}
@@ -229,6 +348,25 @@ class AuthorizationRequestResourceTest {
 
         given()
           .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
+          .body("""
+                {"type": "GRANT", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234",
+                 "authorizations": ["READ_PAYROLL"]}
+                """)
+          .when().post("/authorization-requests")
+          .then()
+             .statusCode(502);
+    }
+
+    @Test
+    void salesforceConflictWithOtherErrorCodeIsReportedAsBadGateway() {
+        salesforce.stubFor(post(APEX_PATH).willReturn(jsonResponse("""
+                {"errorCode": "OTHER"}
+                """, 409)));
+
+        given()
+          .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
           .body("""
                 {"type": "GRANT", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234",
                  "authorizations": ["READ_PAYROLL"]}
@@ -244,6 +382,7 @@ class AuthorizationRequestResourceTest {
 
         given()
           .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
           .body("""
                 {"type": "GRANT", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234",
                  "authorizations": ["READ_PAYROLL"]}
@@ -261,6 +400,7 @@ class AuthorizationRequestResourceTest {
 
         given()
           .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
           .body("""
                 {"type": "GRANT", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234",
                  "authorizations": ["READ_PAYROLL"]}
@@ -271,9 +411,63 @@ class AuthorizationRequestResourceTest {
     }
 
     @Test
+    void requestWithoutIdempotencyKeyIsRejected() {
+        salesforceFilesCase();
+
+        given()
+          .contentType(ContentType.JSON)
+          .body("""
+                {"type": "GRANT", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234",
+                 "authorizations": ["READ_PAYROLL"]}
+                """)
+          .when().post("/authorization-requests")
+          .then()
+             .statusCode(400);
+
+        salesforce.verify(0, postRequestedFor(urlEqualTo(APEX_PATH)));
+    }
+
+    @Test
+    void idempotencyKeyThatIsNotAUuidIsRejected() {
+        salesforceFilesCase();
+
+        given()
+          .contentType(ContentType.JSON)
+          .header("Idempotency-Key", "retry-1")
+          .body("""
+                {"type": "GRANT", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234",
+                 "authorizations": ["READ_PAYROLL"]}
+                """)
+          .when().post("/authorization-requests")
+          .then()
+             .statusCode(400);
+
+        salesforce.verify(0, postRequestedFor(urlEqualTo(APEX_PATH)));
+    }
+
+    @Test
+    void idempotencyKeyThatIsNotACanonicalUuidIsRejected() {
+        salesforceFilesCase();
+
+        given()
+          .contentType(ContentType.JSON)
+          .header("Idempotency-Key", "1-1-1-1-1")
+          .body("""
+                {"type": "GRANT", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234",
+                 "authorizations": ["READ_PAYROLL"]}
+                """)
+          .when().post("/authorization-requests")
+          .then()
+             .statusCode(400);
+
+        salesforce.verify(0, postRequestedFor(urlEqualTo(APEX_PATH)));
+    }
+
+    @Test
     void unknownTypeIsRejected() {
         given()
           .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
           .body("""
                 {"type": "SUSPEND", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234",
                  "authorizations": ["READ_PAYROLL"]}
@@ -287,6 +481,7 @@ class AuthorizationRequestResourceTest {
     void missingTypeIsRejected() {
         given()
           .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
           .body("""
                 {"requestedBy": "alice.admin@corp.com", "employeeId": "E1234",
                  "authorizations": ["READ_PAYROLL"]}
@@ -300,6 +495,7 @@ class AuthorizationRequestResourceTest {
     void grantWithoutEmployeeIdIsRejected() {
         given()
           .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
           .body("""
                 {"type": "GRANT", "requestedBy": "alice.admin@corp.com", "authorizations": ["READ_PAYROLL"]}
                 """)
@@ -314,6 +510,7 @@ class AuthorizationRequestResourceTest {
     void grantWithoutAuthorizationsIsRejected() {
         given()
           .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
           .body("""
                 {"type": "GRANT", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234"}
                 """)
@@ -326,6 +523,7 @@ class AuthorizationRequestResourceTest {
     void revokeWithoutEmployeeIdIsRejected() {
         given()
           .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
           .body("""
                 {"type": "REVOKE", "requestedBy": "alice.admin@corp.com", "authorizations": ["READ_PAYROLL"]}
                 """)
@@ -338,6 +536,7 @@ class AuthorizationRequestResourceTest {
     void revokeWithEmptyAuthorizationsIsRejected() {
         given()
           .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
           .body("""
                 {"type": "REVOKE", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234", "authorizations": []}
                 """)
@@ -350,6 +549,7 @@ class AuthorizationRequestResourceTest {
     void onboardingWithInvalidEmailIsRejected() {
         given()
           .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
           .body("""
                 {"type": "ONBOARD", "requestedBy": "alice.admin@corp.com", "firstName": "Jane", "lastName": "Doe",
                  "email": "not-an-email", "department": "Finance", "startDate": "2026-10-01",
@@ -364,6 +564,7 @@ class AuthorizationRequestResourceTest {
     void requesterThatIsNotAnEmailIsRejected() {
         given()
           .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
           .body("""
                 {"type": "GRANT", "requestedBy": "alice.admin", "employeeId": "E1234",
                  "authorizations": ["READ_PAYROLL"]}

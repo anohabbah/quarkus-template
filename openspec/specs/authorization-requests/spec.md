@@ -62,12 +62,23 @@ The system SHALL accept an authorization request of type `ONBOARD` at `POST /aut
 
 ### Requirement: Invalid requests are rejected
 The system SHALL respond `400 Bad Request` and SHALL NOT send anything to Salesforce when the request is invalid. A request is invalid when any of the following holds:
+- the `Idempotency-Key` header is missing, or is not a UUID;
 - the `type` field is missing or unknown;
 - a required field for its type is missing or blank;
 - `authorizations` is missing or empty, or contains a blank entry;
 - `requestedBy` is not a valid email address;
 - `email` is not a valid email address;
 - `startDate` is not a valid ISO-8601 date.
+
+#### Scenario: Missing idempotency key
+- **WHEN** an administrator posts an otherwise valid `GRANT` request without an `Idempotency-Key` header
+- **THEN** the response status is `400`
+- **AND** nothing is sent to Salesforce
+
+#### Scenario: Idempotency key is not a UUID
+- **WHEN** an administrator posts an otherwise valid `GRANT` request with the header `Idempotency-Key: retry-1`
+- **THEN** the response status is `400`
+- **AND** nothing is sent to Salesforce
 
 #### Scenario: Unknown type
 - **WHEN** an administrator posts a request with `"type": "SUSPEND"`
@@ -96,15 +107,23 @@ The system SHALL respond `400 Bad Request` and SHALL NOT send anything to Salesf
 - **AND** nothing is sent to Salesforce
 
 ### Requirement: Submitted requests are filed as Salesforce Cases
-For every valid request, the system SHALL send exactly one authenticated call to the Salesforce authorization-requests endpoint. The call SHALL carry the request `type`, the requester's email as `requesterEmail`, and the generated `subject` and `description`. The system SHALL NOT retry the call automatically.
+For every valid request, the system SHALL send exactly one authenticated call to the Salesforce authorization-requests endpoint. The call SHALL carry the request's idempotency key as `requestId`, a `requestHash`, the request `type`, the requester's email as `requesterEmail`, and the generated `subject` and `description`. The `requestHash` SHALL be the same for two requests whose `type`, `requesterEmail`, `subject` and `description` are all equal, and SHALL differ when any of them differs. The system SHALL NOT retry the call automatically.
 
 #### Scenario: Grant request is sent to Salesforce
-- **WHEN** a valid `GRANT` request from `alice.admin@corp.com` is accepted
-- **THEN** Salesforce receives one call carrying an OAuth bearer token and the body `{"type": "GRANT", "requesterEmail": "alice.admin@corp.com", "subject": "Authorization grant request", "description": "<the description returned in the response>"}`
+- **WHEN** a valid `GRANT` request from `alice.admin@corp.com` with `Idempotency-Key: 7f3c2a9e-1b4d-4e8a-9c6f-2d5b8e1a3f70` is accepted
+- **THEN** Salesforce receives one call carrying an OAuth bearer token and a body with `"requestId": "7f3c2a9e-1b4d-4e8a-9c6f-2d5b8e1a3f70"`, a non-blank `requestHash`, `"type": "GRANT"`, `"requesterEmail": "alice.admin@corp.com"`, `"subject": "Authorization grant request"`, and `"description": "<the description returned in the response>"`
 
 #### Scenario: Onboarding request is sent to Salesforce
 - **WHEN** a valid `ONBOARD` request is accepted
-- **THEN** Salesforce receives one call with `"type": "ONBOARD"`, the requester's email as `requesterEmail`, and the same `subject` and `description` as returned in the response
+- **THEN** Salesforce receives one call with the request's idempotency key as `requestId`, `"type": "ONBOARD"`, the requester's email as `requesterEmail`, and the same `subject` and `description` as returned in the response
+
+#### Scenario: Identical requests carry the same hash
+- **WHEN** the same valid `GRANT` request is posted twice with the same `Idempotency-Key`
+- **THEN** both calls Salesforce receives carry the same `requestHash`
+
+#### Scenario: Different requests carry different hashes
+- **WHEN** two valid `GRANT` requests that differ only in `employeeId` are posted
+- **THEN** the calls Salesforce receives carry different `requestHash` values
 
 ### Requirement: Unknown requester is rejected
 The system SHALL respond `422 Unprocessable Content` when Salesforce reports that no Contact matches the requester's email.
@@ -115,7 +134,7 @@ The system SHALL respond `422 Unprocessable Content` when Salesforce reports tha
 - **THEN** the response status is `422`
 
 ### Requirement: Salesforce failures are reported
-The system SHALL respond `502 Bad Gateway` when the call to Salesforce fails for any other reason: an error status other than an unknown requester, an unreadable response, or Salesforce being unreachable.
+The system SHALL respond `502 Bad Gateway` when the call to Salesforce fails for any other reason: an error status other than an unknown requester or a reused idempotency key, an unreadable response, or Salesforce being unreachable.
 
 #### Scenario: Salesforce server error
 - **WHEN** an administrator posts a valid request
@@ -126,3 +145,34 @@ The system SHALL respond `502 Bad Gateway` when the call to Salesforce fails for
 - **WHEN** an administrator posts a valid request
 - **AND** Salesforce answers `400` with `{"errorCode": "INVALID_REQUEST"}`
 - **THEN** the response status is `502`
+
+#### Scenario: Salesforce answers 409 without the reused-key error code
+- **WHEN** an administrator posts a valid request
+- **AND** Salesforce answers `409` with a body that does not carry `"errorCode": "REQUEST_ID_REUSED"`
+- **THEN** the response status is `502`
+
+### Requirement: Every request carries an idempotency key
+Every request to `POST /authorization-requests` SHALL carry an `Idempotency-Key` header holding a UUID. The caller SHALL generate one key per logical request, and SHALL send the same key when it retries that request.
+
+#### Scenario: Request with an idempotency key
+- **WHEN** an administrator posts a valid `GRANT` request with the header `Idempotency-Key: 7f3c2a9e-1b4d-4e8a-9c6f-2d5b8e1a3f70`
+- **AND** Salesforce files the Case with case number `00012345`
+- **THEN** the response status is `201`
+- **AND** the body contains `"caseNumber": "00012345"`
+
+### Requirement: A retried request returns the original Case
+When Salesforce reports that a Case already exists for the request's idempotency key and the request content is the same, the system SHALL respond `201 Created` with that Case's `caseNumber`, the `type`, the generated `subject`, and the generated `description`, exactly as for a newly filed Case.
+
+#### Scenario: Retry after the Case was filed
+- **WHEN** an administrator posts a valid `GRANT` request with an `Idempotency-Key` that was already used for the same request
+- **AND** Salesforce answers `200` with the existing Case's case number `00012345`
+- **THEN** the response status is `201`
+- **AND** the body contains `"caseNumber": "00012345"` and `"type": "GRANT"`
+
+### Requirement: A reused idempotency key is rejected
+The system SHALL respond `409 Conflict` when Salesforce reports that the request's idempotency key was already used for a request with different content.
+
+#### Scenario: Key reused for a different request
+- **WHEN** an administrator posts a valid request with an `Idempotency-Key` that was already used for a different request
+- **AND** Salesforce answers `409` with `{"errorCode": "REQUEST_ID_REUSED"}`
+- **THEN** the response status is `409`

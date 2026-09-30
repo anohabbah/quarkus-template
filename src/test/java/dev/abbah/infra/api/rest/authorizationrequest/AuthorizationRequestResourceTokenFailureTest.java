@@ -11,6 +11,8 @@ import io.restassured.http.ContentType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.UUID;
+
 import static com.github.tomakehurst.wiremock.client.WireMock.jsonResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
@@ -43,6 +45,7 @@ class AuthorizationRequestResourceTokenFailureTest {
     void tokenFailureIsReportedAsBadGateway() {
         given()
           .contentType(ContentType.JSON)
+          .header("Idempotency-Key", UUID.randomUUID())
           .body("""
                 {"type": "GRANT", "requestedBy": "alice.admin@corp.com", "employeeId": "E1234",
                  "authorizations": ["READ_PAYROLL"]}
