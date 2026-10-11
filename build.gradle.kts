@@ -1,7 +1,12 @@
+import net.ltgt.gradle.errorprone.errorprone
+import net.ltgt.gradle.nullaway.nullaway
+
 plugins {
     java
     id("io.quarkus")
     id("io.freefair.lombok")
+    id("net.ltgt.errorprone")
+    id("net.ltgt.nullaway")
 }
 
 repositories {
@@ -15,6 +20,8 @@ val quarkusPlatformVersion: String by project
 val mapstructVersion: String by project
 val lombokMapstructBindingVersion: String by project
 val wiremockVersion: String by project
+val errorproneVersion: String by project
+val nullawayVersion: String by project
 
 dependencies {
     implementation(enforcedPlatform("${quarkusPlatformGroupId}:${quarkusPlatformArtifactId}:${quarkusPlatformVersion}"))
@@ -35,6 +42,7 @@ dependencies {
     implementation("io.quarkus:quarkus-micrometer-opentelemetry")
     implementation("io.quarkus:quarkus-smallrye-health")
     implementation("org.mapstruct:mapstruct:${mapstructVersion}")
+    implementation("org.jspecify:jspecify")
     annotationProcessor("org.projectlombok:lombok-mapstruct-binding:${lombokMapstructBindingVersion}")
     annotationProcessor("org.mapstruct:mapstruct-processor:${mapstructVersion}")
     testImplementation("io.quarkus:quarkus-junit")
@@ -44,6 +52,8 @@ dependencies {
     testImplementation("io.opentelemetry:opentelemetry-sdk-testing")
     testImplementation("org.awaitility:awaitility")
     testAnnotationProcessor("org.mapstruct:mapstruct-processor:${mapstructVersion}")
+    errorprone("com.google.errorprone:error_prone_core:${errorproneVersion}")
+    errorprone("com.uber.nullaway:nullaway:${nullawayVersion}")
 }
 
 group = "dev.abbah"
@@ -58,4 +68,22 @@ tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
     options.compilerArgs.add("-parameters")
     options.compilerArgs.add("-Amapstruct.defaultComponentModel=cdi")
+}
+
+nullaway {
+    onlyNullMarked = true
+    jspecifyMode = true
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    val isMainCompile = name == "compileJava"
+    options.errorprone {
+        enabled = isMainCompile
+        disableAllChecks = true
+        error("RequireExplicitNullMarking")
+        nullaway {
+            error()
+            treatGeneratedAsUnannotated = true
+        }
+    }
 }

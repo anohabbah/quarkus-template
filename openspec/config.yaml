@@ -47,7 +47,8 @@ context: |
 
     - Domain (domain/<domain_name>/): pure business logic, no infrastructure
       dependencies. Only CDI annotations (jakarta.enterprise.context.*,
-      jakarta.inject.*) are allowed, on the use case. Each domain package contains
+      jakarta.inject.*) are allowed, on the use case, and JSpecify annotations
+      (org.jspecify.annotations.*) anywhere in domain/. Each domain package contains
       <Domain>.java (record), <Domain>Usecase.java (@ApplicationScoped, depends on
       <Domain>Port), and <Domain>Port.java (driven/outbound port interface).
       A domain may declare additional outbound ports named <Domain><Qualifier>Port
@@ -100,6 +101,12 @@ context: |
       for <Domain>.java and <Domain>Dto.java, when a type has variants that share
       few fields. An interface grouping nested records is the form for
       <Domain>Payload.java.
+    - Every src/main package has a package-info.java annotated @NullMarked. A type
+      outside any @NullMarked scope fails the build (RequireExplicitNullMarking).
+      Record nullness: request DTO components are non-null and backed by Bean
+      Validation @Not* constraints; an optional request DTO field is @Nullable with
+      no @Not*; response DTOs built from domain values need no constraints; wire
+      payload fields controlled by an external system are @Nullable.
 
 rules:
   tasks:

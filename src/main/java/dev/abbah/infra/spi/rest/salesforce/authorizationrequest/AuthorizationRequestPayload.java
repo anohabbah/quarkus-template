@@ -1,5 +1,7 @@
 package dev.abbah.infra.spi.rest.salesforce.authorizationrequest;
 
+import org.jspecify.annotations.Nullable;
+
 import java.util.UUID;
 
 /**
@@ -10,9 +12,9 @@ public interface AuthorizationRequestPayload {
     record Request(UUID requestId, String requestHash, String type, String requesterEmail, String subject, String description) {
     }
 
-    record Response(String caseId, String caseNumber) {
+    record Response(@Nullable String caseId, @Nullable String caseNumber) {
     }
 
-    record Error(String errorCode, String message) {
+    record Error(@Nullable String errorCode, @Nullable String message) {
     }
 }

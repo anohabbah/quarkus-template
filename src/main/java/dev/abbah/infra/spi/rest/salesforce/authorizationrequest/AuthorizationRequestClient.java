@@ -10,6 +10,7 @@ import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.faulttolerance.Timeout;
 import org.eclipse.microprofile.faulttolerance.exceptions.TimeoutException;
 import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
+import org.jspecify.annotations.Nullable;
 
 import java.util.function.Predicate;
 
@@ -22,7 +23,7 @@ public interface AuthorizationRequestClient {
     @Retry(maxRetries = 2, delay = 500, jitter = 250)
     @RetryWhen(exception = TransientFailure.class)
     @Timeout(7000)
-    AuthorizationRequestPayload.Response submit(AuthorizationRequestPayload.Request request);
+    AuthorizationRequestPayload.@Nullable Response submit(AuthorizationRequestPayload.Request request);
 
     /**
      * Tells which failures of {@link #submit} are worth another attempt.
