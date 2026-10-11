@@ -52,14 +52,14 @@
 
 ## 9. End-to-end pipeline check
 
-- [ ] 9.1 Open a pull request with this change (ask the user before pushing). Verify the spec scenario "A pull request publishes nothing": only the `build` job runs, and no package version is created on GHCR.
+- [x] 9.1 Open a pull request with this change (ask the user before pushing). Verify the spec scenario "A pull request publishes nothing": only the `build` job runs, and no package version is created on GHCR.
 - [ ] 9.2 After the merge, verify the spec scenario "A push to main publishes an image": `ghcr.io/anohabbah/quarkus-template:<sha>` exists. Make the package public if needed (README), then confirm that `deploy-staging` passes `rollout status`.
 - [ ] 9.3 Verify the spec scenario "A commit reaches production through staging": `deploy-production` waits for approval. After approval, `kubectl get deploy quarkus-template -n production -o jsonpath='{..image}'` shows the same SHA as staging.
-- [ ] 9.4 Verify the spec scenarios "A failed staging rollout stops promotion" and "A failing build publishes nothing" by recording that 6.4 and the `needs:` chain cover them. Run a real failing push only if the user asks for one.
+- [x] 9.4 Verify the spec scenarios "A failed staging rollout stops promotion" and "A failing build publishes nothing" by recording that 6.4 and the `needs:` chain cover them. Run a real failing push only if the user asks for one.
 
 ## 10. Review
 
-- [ ] 10.1 Review `application.properties`, `deploy/` and `ci.yml` for duplication and leftover settings. Verify that `./gradlew build` and both overlay renders still pass.
+- [x] 10.1 Review `application.properties`, `deploy/` and `ci.yml` for duplication and leftover settings. Verify that `./gradlew build` and both overlay renders still pass.
 
 ## Workflow follow-up
 
