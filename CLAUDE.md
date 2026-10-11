@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Quarkus 3.39 starter template (Gradle Kotlin DSL, Java 25, base package `dev.abbah`). Currently contains only a sample `GreetingResource` at `/hello`. Versions for Quarkus, MapStruct, `lombok-mapstruct-binding`, and the Lombok (`io.freefair.lombok`) plugin live in `gradle.properties`, not in `build.gradle.kts`. Plugin versions are applied through `pluginManagement` in `settings.gradle.kts`.
+Quarkus 3.40 LTS starter template (Gradle Kotlin DSL, Java 25, base package `dev.abbah`). Currently contains only a sample `GreetingResource` at `/hello`. Versions for Quarkus, MapStruct, `lombok-mapstruct-binding`, and the Lombok (`io.freefair.lombok`) plugin live in `gradle.properties`, not in `build.gradle.kts`. Plugin versions are applied through `pluginManagement` in `settings.gradle.kts`.
 
 ## Commands
 
@@ -18,6 +18,17 @@ Quarkus 3.39 starter template (Gradle Kotlin DSL, Java 25, base package `dev.abb
 ./gradlew build -Dquarkus.native.enabled=true [-Dquarkus.native.container-build=true]  # native executable
 ./gradlew testNative                                   # run src/native-test (@QuarkusIntegrationTest) against the packaged/native build
 ./gradlew addExtension --extensions='hibernate-orm-panache,jdbc-postgresql'  # add Quarkus extensions (versions come from the BOM)
+```
+
+The Quarkus CLI (`quarkus`, installed through SDKMAN) is also available. It wraps the Gradle tasks above and handles platform upgrades:
+
+```shell
+quarkus dev                                            # same as ./gradlew quarkusDev
+quarkus build                                          # same as ./gradlew build
+quarkus ext list                                       # installed extensions (add --installable to browse)
+quarkus ext add hibernate-orm-panache jdbc-postgresql  # same as ./gradlew addExtension
+quarkus registry list --streams                        # available platform streams (LTS and latest)
+quarkus update -S 3.40 -y                              # upgrade to a stream: bumps gradle.properties and applies OpenRewrite recipes
 ```
 
 No linter or formatter is configured.

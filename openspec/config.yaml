@@ -1,7 +1,7 @@
 schema: spec-driven
 
 context: |
-  Tech stack: Quarkus 3.39 (Gradle Kotlin DSL, Java 25), Quarkus REST + Jackson,
+  Tech stack: Quarkus 3.40 LTS (Gradle Kotlin DSL, Java 25), Quarkus REST + Jackson,
   ArC (CDI), Qute, Lombok, MapStruct. Base package: dev.abbah.
   Tests: @QuarkusTest + RestAssured in src/test; @QuarkusIntegrationTest classes in
   src/native-test extend the JVM test (XxxIT extends XxxTest).
