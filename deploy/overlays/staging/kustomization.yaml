@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: staging
+resources:
+  - ../../base
+replicas:
+  - name: quarkus-template
+    count: 1
+# Hashed name: the generator rewrites the envFrom reference, so a config change rolls the pods
+configMapGenerator:
+  - name: quarkus-template-config
+    envs:
+      - config.env

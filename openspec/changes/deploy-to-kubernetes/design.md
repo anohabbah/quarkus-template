@@ -52,6 +52,10 @@ Facts checked in the Quarkus 3.40.1 test jars during planning:
   - **Environment:** `quarkus.kubernetes.env.configmaps=quarkus-template-config` and `quarkus.kubernetes.env.secrets=quarkus-template-secrets`, loaded whole (`envFrom`). The ConfigMap holds `SALESFORCE_URL`, `QUARKUS_OTEL_EXPORTER_OTLP_ENDPOINT` and `QUARKUS_DATASOURCE_JDBC_URL`. The Secret holds `SALESFORCE_CLIENT_ID`, `SALESFORCE_CLIENT_SECRET`, `QUARKUS_DATASOURCE_USERNAME` and `QUARKUS_DATASOURCE_PASSWORD`.
   - **Resources:** requests of `250m` CPU and `512Mi` memory, and a `512Mi` memory limit, with no CPU limit. The image's `run-java.sh` sizes the heap to 50% of the limit.
   - **No namespace** in the base. Each overlay sets it.
+  - **Overrides of the extension's defaults** (found during apply, 3.1):
+    - `quarkus.kubernetes.init-task-defaults.enabled=false`. By default the Flyway extension moves migrations into a `quarkus-template-flyway-init` Job, with a `k8s-wait-for` init container and a `view-jobs` Role and RoleBinding. A Job's pod template is immutable, so the next deploy with a new tag would fail at `kubectl apply`. Migrations stay at startup (`migrate-at-start`, advisory lock).
+    - `quarkus.kubernetes.add-version-to-label-selectors=false`. Selectors are immutable, and the version label follows the project version, so a version bump would fail at `kubectl apply`.
+    - `quarkus.kubernetes.startup-probe.failure-threshold=30`. The default allows about 35 s, which migrations at startup can exceed. 30 × 10 s gives about 5 minutes, with liveness unchanged.
 - The manifest isn't committed. CI uploads `build/kubernetes/` from the job that built the image, and each deploy job applies that same artifact. Promotion therefore can't pick up a different image.
 
 **Alternatives considered:**
@@ -83,6 +87,7 @@ deploy/
 - `quarkus.shutdown.timeout=25s`, so in-flight requests (up to about 22.5 s) can finish.
 - `terminationGracePeriodSeconds: 40` on the Deployment, above the 30 s Quarkus can take. It goes in through `quarkus.kubernetes.*` if a key exists. Otherwise it goes in `src/main/kubernetes/kubernetes.yml`, which the extension merges into its output.
 - If the delay doesn't make readiness report down in 3.40.1, the delay is dropped and recorded. Kubernetes then still stops routing during the timeout, with a brief window of refused connections.
+- Checked during apply (4.3, Quarkus 3.40.1): after `SIGTERM`, `/q/health/ready` returns `503` at once (a `Graceful Shutdown` check reports DOWN), requests keep being served for the 5 s delay, and the server stops at 5.0 s. The delay is kept. `terminationGracePeriodSeconds` has no `quarkus.kubernetes.*` key, so it's set in `src/main/kubernetes/kubernetes.yml`.
 
 ### D5. GitHub Actions: one workflow, tests before the image
 
