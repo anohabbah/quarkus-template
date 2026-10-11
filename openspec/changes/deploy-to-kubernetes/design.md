@@ -98,7 +98,9 @@ on: pull_request, push to main
 
 build  (all events)
   setup-java (Temurin 25), setup-gradle
-  ./gradlew build testNative                      tests and ITs against the jar
+  ./gradlew build                                 tests
+  ./gradlew testNative -x quarkusBuild \
+     -Dquarkus.native.enabled=false               ITs against the jar
   [main only]
   ./gradlew build -x test -x testNative \
      -Dquarkus.container-image.push=true \
@@ -113,6 +115,7 @@ deploy-production  needs deploy-staging, environment: production (required revie
   kubectl rollout status deployment/quarkus-template -n <env> --timeout=5m
 ```
 
+- `testNative` on its own builds and tests a native executable (on a runner without GraalVM it falls back to a Mandrel container build). The first PR run did that and failed, so the ITs reuse the jar from `build`, as earlier changes ran them.
 - The image is built in a second Gradle call **after** the tests. That way `testNative` runs against the jar (see Context). The second call skips the tests but still compiles, so NullAway still guards what's pushed.
 - Each deploy job has a `concurrency` group per environment, without cancelling a deploy already running.
 - Each GitHub Environment holds its own `KUBECONFIG` secret, for a ServiceAccount whose Role covers only that namespace. Staging jobs can't reach production.

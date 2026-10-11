@@ -23,8 +23,10 @@ jobs:
           java-version: 25
       - uses: gradle/actions/setup-gradle@v6
 
-      # JVM tests and the ITs against the packaged jar. Dev Services use the runner's Docker.
-      - run: ./gradlew build testNative
+      # JVM tests, then the ITs against the packaged jar. Dev Services use the runner's Docker.
+      # testNative alone would build and test a native executable: reuse the jar from build instead.
+      - run: ./gradlew build
+      - run: ./gradlew testNative -x quarkusBuild -Dquarkus.native.enabled=false
 
       # The image is built after the tests, in a build that skips them: in a build that also produces an image,
       # testNative would run the ITs against the container (see CLAUDE.md). Still compiles, so NullAway still runs.
