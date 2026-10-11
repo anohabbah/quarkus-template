@@ -31,6 +31,9 @@ dependencies {
     implementation("io.quarkus:quarkus-oidc-client")
     implementation("io.quarkus:quarkus-rest-client-oidc-filter")
     implementation("io.quarkus:quarkus-smallrye-fault-tolerance")
+    implementation("io.quarkus:quarkus-opentelemetry")
+    implementation("io.quarkus:quarkus-micrometer-opentelemetry")
+    implementation("io.quarkus:quarkus-smallrye-health")
     implementation("org.mapstruct:mapstruct:${mapstructVersion}")
     annotationProcessor("org.projectlombok:lombok-mapstruct-binding:${lombokMapstructBindingVersion}")
     annotationProcessor("org.mapstruct:mapstruct-processor:${mapstructVersion}")
@@ -38,6 +41,8 @@ dependencies {
     testImplementation("io.quarkus:quarkus-jacoco")
     testImplementation("io.rest-assured:rest-assured")
     testImplementation("org.wiremock:wiremock-standalone:${wiremockVersion}")
+    testImplementation("io.opentelemetry:opentelemetry-sdk-testing")
+    testImplementation("org.awaitility:awaitility")
     testAnnotationProcessor("org.mapstruct:mapstruct-processor:${mapstructVersion}")
 }
 

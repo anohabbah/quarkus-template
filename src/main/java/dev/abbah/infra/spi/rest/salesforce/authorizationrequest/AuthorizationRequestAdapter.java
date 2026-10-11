@@ -44,7 +44,10 @@ public class AuthorizationRequestAdapter implements AuthorizationRequestPort {
                 throw new RequestIdReusedException(requestId, e);
             }
             throw new SubmissionFailedException(e);
-        } catch (ProcessingException | OidcClientException | TimeoutException e) {
+        } catch (OidcClientException e) {
+            // Its message can be the token endpoint's response body, which must not reach telemetry.
+            throw new SubmissionFailedException(new IllegalStateException("Token request failed"));
+        } catch (ProcessingException | TimeoutException e) {
             throw new SubmissionFailedException(e);
         }
         if (response == null || response.caseNumber() == null || response.caseNumber().isBlank()) {

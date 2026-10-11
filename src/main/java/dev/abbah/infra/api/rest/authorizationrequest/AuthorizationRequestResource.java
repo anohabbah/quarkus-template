@@ -4,6 +4,7 @@ import dev.abbah.domain.authorizationrequest.AuthorizationRequestUsecase;
 import dev.abbah.domain.authorizationrequest.RequestIdReusedException;
 import dev.abbah.domain.authorizationrequest.SubmissionFailedException;
 import dev.abbah.domain.authorizationrequest.UnknownRequesterException;
+import io.quarkus.logging.Log;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -11,6 +12,7 @@ import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.core.Response;
+import org.jboss.logging.MDC;
 import org.jboss.resteasy.reactive.ResponseStatus;
 import org.jboss.resteasy.reactive.server.ServerExceptionMapper;
 
@@ -34,6 +36,7 @@ public class AuthorizationRequestResource {
     @ResponseStatus(201)
     public AuthorizationRequestDto.Response submit(@HeaderParam("Idempotency-Key") @NotNull @Pattern(regexp = CANONICAL_UUID) String requestId,
                                                    @Valid AuthorizationRequestDto request) {
+        MDC.put("idempotencyKey", requestId);
         return mapper.toResponse(usecase.submit(UUID.fromString(requestId), mapper.toDomain(request)));
     }
 
@@ -49,6 +52,7 @@ public class AuthorizationRequestResource {
 
     @ServerExceptionMapper
     public Response submissionFailed(SubmissionFailedException e) {
+        Log.error("Salesforce submission failed", e);
         return Response.status(Response.Status.BAD_GATEWAY).build();
     }
 }
