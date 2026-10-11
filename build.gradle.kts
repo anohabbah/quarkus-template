@@ -22,6 +22,7 @@ val lombokMapstructBindingVersion: String by project
 val wiremockVersion: String by project
 val errorproneVersion: String by project
 val nullawayVersion: String by project
+val bootuiVersion: String by project
 
 dependencies {
     implementation(enforcedPlatform("${quarkusPlatformGroupId}:${quarkusPlatformArtifactId}:${quarkusPlatformVersion}"))
@@ -43,6 +44,7 @@ dependencies {
     implementation("io.quarkus:quarkus-smallrye-health")
     implementation("org.mapstruct:mapstruct:${mapstructVersion}")
     implementation("org.jspecify:jspecify")
+    implementation("com.julien-dubois.bootui:bootui-quarkus:${bootuiVersion}")
     annotationProcessor("org.projectlombok:lombok-mapstruct-binding:${lombokMapstructBindingVersion}")
     annotationProcessor("org.mapstruct:mapstruct-processor:${mapstructVersion}")
     testImplementation("io.quarkus:quarkus-junit")
