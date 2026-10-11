@@ -1,0 +1,10 @@
+# Merged by quarkus-kubernetes into build/kubernetes/kubernetes.yml (no quarkus.kubernetes.* key exists for this field).
+# Above the up to 30 s Quarkus takes to stop (quarkus.shutdown.delay + quarkus.shutdown.timeout).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quarkus-template
+spec:
+  template:
+    spec:
+      terminationGracePeriodSeconds: 40

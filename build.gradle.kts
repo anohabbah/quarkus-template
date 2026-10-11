@@ -42,6 +42,8 @@ dependencies {
     implementation("io.quarkus:quarkus-opentelemetry")
     implementation("io.quarkus:quarkus-micrometer-opentelemetry")
     implementation("io.quarkus:quarkus-smallrye-health")
+    implementation("io.quarkus:quarkus-container-image-jib")
+    implementation("io.quarkus:quarkus-kubernetes")
     implementation("org.mapstruct:mapstruct:${mapstructVersion}")
     implementation("org.jspecify:jspecify")
     implementation("com.julien-dubois.bootui:bootui-quarkus:${bootuiVersion}")
